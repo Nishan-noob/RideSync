@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import type { RideRole, RideSnapshotPayload } from '@ridesync/shared'
+import type { Coordinate, RideRole, RideSnapshotPayload } from '@ridesync/shared'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { MapCanvas } from '../components/MapCanvas'
@@ -56,6 +56,29 @@ function fallbackWaypointPosition() {
   }
 }
 
+type PlaceCandidate = {
+  id: string
+  title: string
+  subtitle: string
+  position: Coordinate
+}
+
+function humanizeRideError(message: string): string {
+  if (message.includes('Failed to fetch')) {
+    return 'Could not reach the server. Please check your connection and try again.'
+  }
+
+  if (message.includes('Snapshot request failed with 403')) {
+    return 'This invite link is no longer valid for this ride.'
+  }
+
+  if (message.includes('Snapshot request failed with 404')) {
+    return 'This ride was not found. Check the invite link and try again.'
+  }
+
+  return message
+}
+
 export function RidePage() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
@@ -69,8 +92,13 @@ export function RidePage() {
   const [isSharing, setIsSharing] = useState(true)
   const [waypointTitle, setWaypointTitle] = useState('')
   const [waypointNote, setWaypointNote] = useState('')
+  const [waypointQuery, setWaypointQuery] = useState('')
+  const [placeResults, setPlaceResults] = useState<PlaceCandidate[]>([])
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false)
+  const [selectedWaypointPosition, setSelectedWaypointPosition] = useState<Coordinate | null>(null)
   const [isRotatingInvite, setIsRotatingInvite] = useState(false)
   const [isClosingRide, setIsClosingRide] = useState(false)
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false)
 
   const role: RideRole = searchParams.get('role') === 'organizer' ? 'organizer' : 'rider'
   const displayName = session.displayName || session.userId
@@ -151,7 +179,7 @@ export function RidePage() {
         }
 
         const message = error instanceof Error ? error.message : 'Failed to load ride snapshot.'
-        dispatch(setRideError(message))
+        dispatch(setRideError(humanizeRideError(message)))
       })
 
     return () => {
@@ -276,10 +304,99 @@ export function RidePage() {
       dispatch(setRideError('Ride is now closed.'))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not close ride.'
-      dispatch(setRideError(message))
+      dispatch(setRideError(humanizeRideError(message)))
     } finally {
       setIsClosingRide(false)
     }
+  }
+
+  const handleMapSelect = (position: Coordinate) => {
+    if (isRideClosed) {
+      return
+    }
+
+    setSelectedWaypointPosition(position)
+    if (!waypointTitle.trim()) {
+      setWaypointTitle('Pinned waypoint')
+    }
+  }
+
+  const handleSearchWaypointPlaces = async () => {
+    const query = waypointQuery.trim()
+
+    if (!query) {
+      setPlaceResults([])
+      return
+    }
+
+    setIsSearchingPlaces(true)
+
+    try {
+      const url = new URL('https://nominatim.openstreetmap.org/search')
+      url.searchParams.set('format', 'jsonv2')
+      url.searchParams.set('q', query)
+      url.searchParams.set('limit', '5')
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Accept: 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Place search failed with ${response.status}`)
+      }
+
+      const payload = (await response.json()) as Array<{
+        place_id?: number
+        lat: string
+        lon: string
+        display_name?: string
+        name?: string
+      }>
+
+      const mapped: PlaceCandidate[] = []
+
+      payload.forEach((result, index) => {
+        const lat = Number(result.lat)
+        const lng = Number(result.lon)
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          return
+        }
+
+        const display = result.display_name ?? 'Unnamed place'
+        const [title, ...rest] = display.split(',')
+
+        mapped.push({
+          id: String(result.place_id ?? index),
+          title: (result.name || title || 'Waypoint').trim(),
+          subtitle: rest.join(',').trim(),
+          position: {
+            lat,
+            lng,
+            accuracyM: 20,
+            recordedAt: Date.now(),
+          },
+        })
+      })
+
+      setPlaceResults(mapped)
+      if (mapped.length === 0) {
+        dispatch(setRideError('No matching places found. Try a broader search.'))
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not search places.'
+      dispatch(setRideError(humanizeRideError(message)))
+    } finally {
+      setIsSearchingPlaces(false)
+    }
+  }
+
+  const handleSelectPlace = (place: PlaceCandidate) => {
+    setSelectedWaypointPosition(place.position)
+    setWaypointTitle(place.title)
+    setWaypointQuery(place.title)
+    setPlaceResults([])
   }
 
   const handleAddWaypoint = () => {
@@ -302,25 +419,37 @@ export function RidePage() {
       return
     }
 
+    const chosenPosition = selectedWaypointPosition
+      ? {
+          ...selectedWaypointPosition,
+          recordedAt: Date.now(),
+        }
+      : selfLocation
+        ? {
+            ...selfLocation,
+            recordedAt: Date.now(),
+          }
+        : fallbackWaypointPosition()
+
     socket.emit('waypoint:add', {
       rideId,
       userId: session.userId,
       title,
       note: waypointNote.trim() || undefined,
-      position: selfLocation
-        ? {
-            ...selfLocation,
-            recordedAt: Date.now(),
-          }
-        : fallbackWaypointPosition(),
+      position: chosenPosition,
     })
 
-    if (!selfLocation) {
+    if (selectedWaypointPosition) {
+      dispatch(setRideError('Waypoint added from selected map location.'))
+    } else if (!selfLocation) {
       dispatch(setRideError('No GPS lock yet. Waypoint was placed using demo position.'))
     }
 
     setWaypointTitle('')
     setWaypointNote('')
+    setWaypointQuery('')
+    setPlaceResults([])
+    setSelectedWaypointPosition(null)
   }
 
   const handleRemoveWaypoint = (waypointId: string) => {
@@ -421,20 +550,34 @@ export function RidePage() {
 
       <section className="panel status-panel">
         <span className={`status-pill is-${rideState.connectionStatus}`}>
-          Socket: {rideState.connectionStatus}
+          {rideState.connectionStatus === 'connected' ? 'Connected' : 'Reconnecting'}
         </span>
         <span className={`status-pill ${isRideClosed ? 'is-error' : 'is-connected'}`}>
-          Ride: {rideState.status}
+          Ride: {rideState.status === 'closed' ? 'Closed' : 'Active'}
         </span>
-        <span className="status-pill">Invite: {inviteToken ? 'provided' : 'missing'}</span>
-        {role === 'organizer' && (
-          <span className="status-pill">Host token: {organizerToken ? 'present' : 'missing'}</span>
-        )}
-        <span className="status-pill">Pending telemetry: {pendingTelemetryCount}</span>
-        <span className="status-pill">Telemetry events (local): {queue.length}</span>
+        <span className="status-pill">Sharing: {isSharingActive ? 'On' : 'Paused'}</span>
         <span className="status-pill">Riders: {rideState.members.length}</span>
-        {isDebugMode && <span className="status-pill">Socket URL: {SOCKET_URL}</span>}
+        <button
+          type="button"
+          className="btn btn-subtle btn-diagnostics"
+          onClick={() => setIsDiagnosticsOpen((value) => !value)}
+        >
+          {isDiagnosticsOpen ? 'Hide Diagnostics' : 'Show Diagnostics'}
+        </button>
       </section>
+
+      {isDiagnosticsOpen && (
+        <section className="panel diagnostics-panel">
+          <span className="status-pill">Invite: {inviteToken ? 'provided' : 'missing'}</span>
+          {role === 'organizer' && (
+            <span className="status-pill">Host token: {organizerToken ? 'present' : 'missing'}</span>
+          )}
+          <span className="status-pill">Pending telemetry: {pendingTelemetryCount}</span>
+          <span className="status-pill">Telemetry events (local): {queue.length}</span>
+          {isDebugMode && <span className="status-pill">Socket URL: {SOCKET_URL}</span>}
+          {isDemoTelemetry && <span className="status-pill">Mode: demo telemetry</span>}
+        </section>
+      )}
 
       {rideState.lastError && <p className="banner-error">{rideState.lastError}</p>}
       {isRideClosed && (
@@ -446,7 +589,14 @@ export function RidePage() {
           locations={rideState.latestLocations}
           waypoints={rideState.waypoints}
           selfUserId={session.userId}
+          selectedPosition={selectedWaypointPosition}
+          onMapSelect={handleMapSelect}
+          isSelectionEnabled={!isRideClosed}
         />
+        <p className="hint-text map-hint">
+          Tap the map to pin a waypoint location. You can still use your current location with one
+          click.
+        </p>
       </section>
 
       <section className="panel controls-panel">
@@ -470,6 +620,43 @@ export function RidePage() {
 
       <section className="panel controls-panel">
         <h2>Waypoints</h2>
+        <label htmlFor="waypoint-search">Find place</label>
+        <div className="search-row">
+          <input
+            id="waypoint-search"
+            value={waypointQuery}
+            onChange={(event) => setWaypointQuery(event.target.value)}
+            placeholder="Search petrol pump, cafe, checkpoint"
+            maxLength={100}
+            disabled={isRideClosed || isSearchingPlaces}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleSearchWaypointPlaces}
+            disabled={isRideClosed || isSearchingPlaces}
+          >
+            {isSearchingPlaces ? 'Searching...' : 'Search'}
+          </button>
+        </div>
+        {placeResults.length > 0 && (
+          <ul className="search-results">
+            {placeResults.map((place) => (
+              <li key={place.id}>
+                <button
+                  type="button"
+                  className="btn btn-subtle"
+                  onClick={() => handleSelectPlace(place)}
+                  disabled={isRideClosed}
+                >
+                  <strong>{place.title}</strong>
+                  {place.subtitle && <span>{place.subtitle}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
         <label htmlFor="waypoint-title">Title</label>
         <input
           id="waypoint-title"
@@ -496,8 +683,24 @@ export function RidePage() {
           onClick={handleAddWaypoint}
           disabled={isRideClosed}
         >
-          Add Waypoint At My Position
+          Add Waypoint
         </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => {
+            setSelectedWaypointPosition(null)
+            setPlaceResults([])
+            setWaypointQuery('')
+          }}
+          disabled={isRideClosed}
+        >
+          Use My Current Location
+        </button>
+        <p className="hint-text">
+          Location source:{' '}
+          {selectedWaypointPosition ? 'selected map/search location' : 'your current location'}
+        </p>
       </section>
 
       <section className="panel list-panel">

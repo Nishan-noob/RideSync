@@ -246,6 +246,19 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
+  align-items: center;
+}
+
+.diagnostics-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.btn-diagnostics {
+  padding: 0.4rem 0.64rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
 }
 
 .status-pill {
@@ -308,6 +321,15 @@ textarea {
   background: #57a1ff;
 }
 
+.selection-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #ffbe74;
+  box-shadow: 0 0 0 6px rgba(255, 190, 116, 0.25);
+}
+
 .map-canvas .maplibregl-popup-content {
   background: #f4f8fb;
   color: #1f2d36;
@@ -358,6 +380,35 @@ textarea {
 .controls-panel {
   display: grid;
   gap: 0.55rem;
+}
+
+.map-hint {
+  margin-top: 0.6rem;
+}
+
+.search-row {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.search-results button {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.search-results span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 .hint-text {
@@ -411,5 +462,9 @@ textarea {
 
   .ride-header-actions {
     width: min(340px, 100%);
+  }
+
+  .search-row {
+    grid-template-columns: 1fr auto;
   }
 }

@@ -7,6 +7,9 @@ type MapCanvasProps = {
   locations: Record<string, Coordinate>
   waypoints: Waypoint[]
   selfUserId: string
+  selectedPosition?: Coordinate | null
+  onMapSelect?: (position: Coordinate) => void
+  isSelectionEnabled?: boolean
 }
 
 const DEFAULT_CENTER: [number, number] = [77.5946, 12.9716]
@@ -57,12 +60,26 @@ function createWaypointMarker(): HTMLDivElement {
   return markerElement
 }
 
-export function MapCanvas({ locations, waypoints, selfUserId }: MapCanvasProps) {
+function createSelectionMarker(): HTMLDivElement {
+  const markerElement = document.createElement('div')
+  markerElement.className = 'map-marker selection-marker'
+  return markerElement
+}
+
+export function MapCanvas({
+  locations,
+  waypoints,
+  selfUserId,
+  selectedPosition = null,
+  onMapSelect,
+  isSelectionEnabled = false,
+}: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const hasCenteredRef = useRef(false)
   const riderMarkersRef = useRef<Map<string, Marker>>(new Map())
   const waypointMarkersRef = useRef<Map<string, Marker>>(new Map())
+  const selectionMarkerRef = useRef<Marker | null>(null)
 
   useEffect(() => {
     if (mapRef.current || !containerRef.current) {
@@ -79,12 +96,15 @@ export function MapCanvas({ locations, waypoints, selfUserId }: MapCanvasProps) 
 
     const riderMarkers = riderMarkersRef.current
     const waypointMarkers = waypointMarkersRef.current
+    const selectionMarker = selectionMarkerRef.current
 
     return () => {
       riderMarkers.forEach((marker) => marker.remove())
       waypointMarkers.forEach((marker) => marker.remove())
+      selectionMarker?.remove()
       riderMarkers.clear()
       waypointMarkers.clear()
+      selectionMarkerRef.current = null
 
       mapRef.current?.remove()
       mapRef.current = null
@@ -169,6 +189,60 @@ export function MapCanvas({ locations, waypoints, selfUserId }: MapCanvasProps) 
       }
     }
   }, [waypoints])
+
+  useEffect(() => {
+    const map = mapRef.current
+
+    if (!map || !onMapSelect) {
+      return
+    }
+
+    const handleClick = (event: maplibregl.MapMouseEvent) => {
+      if (!isSelectionEnabled) {
+        return
+      }
+
+      const selected: Coordinate = {
+        lat: event.lngLat.lat,
+        lng: event.lngLat.lng,
+        accuracyM: 12,
+        recordedAt: Date.now(),
+      }
+      onMapSelect(selected)
+    }
+
+    map.on('click', handleClick)
+
+    return () => {
+      map.off('click', handleClick)
+    }
+  }, [isSelectionEnabled, onMapSelect])
+
+  useEffect(() => {
+    const map = mapRef.current
+
+    if (!map) {
+      return
+    }
+
+    if (!selectedPosition) {
+      selectionMarkerRef.current?.remove()
+      selectionMarkerRef.current = null
+      return
+    }
+
+    if (!selectionMarkerRef.current) {
+      selectionMarkerRef.current = new maplibregl.Marker({
+        element: createSelectionMarker(),
+        anchor: 'center',
+      })
+        .setLngLat([selectedPosition.lng, selectedPosition.lat])
+        .addTo(map)
+      return
+    }
+
+    selectionMarkerRef.current.setLngLat([selectedPosition.lng, selectedPosition.lat])
+  }, [selectedPosition])
 
   return <div ref={containerRef} className="map-canvas" />
 }
