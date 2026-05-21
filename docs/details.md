@@ -1,5 +1,103 @@
 # RideSync Technical Deep Dive and Interview Guide
 
+## Quick Revision Pack (5 to 10 Minutes)
+
+### A. Five-Minute Interview Pitch
+
+Use this spoken structure:
+
+1. Problem:
+- Group riders need lightweight, realtime coordination with low battery drain and simple sharing.
+
+2. Solution:
+- I built RideSync, a mobile-first PWA where an organizer creates a ride, shares an invite link, riders join in realtime, and everyone can coordinate using live map location and waypoints.
+
+3. Architecture:
+- Monorepo with React web app, Node/Express + Socket.io backend, and shared contracts package using Zod.
+- Shared contracts eliminate client-server payload drift.
+- Store and socket adapters are pluggable: memory or Mongo, memory or Redis.
+
+4. Security model:
+- Invite token gates ride access.
+- Separate organizer token gates privileged actions like invite rotation and ride closure.
+
+5. Reliability model:
+- Telemetry is battery-aware and queued locally in IndexedDB.
+- Reconnect/offline UX is explicit, with queue flush after connection recovery.
+
+6. Deployment:
+- Single repo, single Render blueprint, two services (static web + Node API) plus managed Mongo and Redis.
+- I resolved real production issues: missing runtime deps, static deep-link rewrites, and exact env/CORS alignment.
+
+7. Outcome:
+- Production beta is live with invite lifecycle, organizer controls, waypoint pin/search/edit, and direct list navigation.
+
+### B. Top 20 High-Signal Questions and Model Answer Cues
+
+1. Why monorepo?
+- Shared contracts and coordinated releases across web/server; fewer integration regressions.
+
+2. Why Socket.io instead of polling?
+- Bidirectional low-latency updates, room semantics, and robust reconnection behavior.
+
+3. How do you prevent payload drift?
+- Shared `packages/shared` schemas/types imported by both client and server.
+
+4. How is access control handled without full auth?
+- Invite token for joining/reading snapshots, organizer token for privileged mutations.
+
+5. Why separate organizer token from invite token?
+- Riders can share invite while organizer controls stay private and revocable.
+
+6. How does invite rotation work?
+- Server regenerates invite token; old token fails both snapshot and socket join validation.
+
+7. How is ride closure enforced?
+- Ride status becomes closed; mutation paths reject telemetry/waypoint updates afterward.
+
+8. How do you support offline behavior?
+- Telemetry is queued in IndexedDB and sent after reconnect when membership and socket are valid.
+
+9. How do you keep battery usage manageable?
+- Adaptive telemetry sampling and gated emission to avoid unnecessary updates.
+
+10. How do you scale realtime?
+- Redis adapter for Socket.io allows cross-instance pub/sub consistency.
+
+11. Why a store abstraction?
+- Same business logic can run with in-memory for dev or Mongo for persistence.
+
+12. How did you deploy frontend and backend from one folder?
+- One render.yaml defines two services: static web publish path and Node web service start command.
+
+13. Why did invite deep links fail at first?
+- Static hosting needed SPA rewrite from `/*` to `/index.html`.
+
+14. What caused server deploy failure with exit 127?
+- `tsx` only in devDependencies; moved to dependencies for production runtime.
+
+15. Why can API health be green but frontend still fail?
+- Env/CORS mismatch: frontend pointed to wrong API URL or CLIENT_ORIGIN mismatch.
+
+16. How do you improve customer-facing UX over debug UX?
+- Hide diagnostics by default, simplify status chips, and use toast feedback.
+
+17. How did waypoint UX evolve?
+- Added map tap pinning, place search, edit flow, and direct list-level navigate action.
+
+18. What tests exist today?
+- Shared contract tests, server route tests, plus lint/typecheck/build/test gates each iteration.
+
+19. What would you improve next?
+- E2E tests, stale-location indicators, waypoint ordering, and observability.
+
+20. Biggest engineering lesson?
+- Most production bugs are integration/config issues; fast log-driven diagnosis plus shared contracts reduced recovery time.
+
+### C. One-Minute Emergency Pitch (Ultra Short)
+
+RideSync is a realtime, mobile-first ride coordination PWA built with React, Node, Socket.io, and shared contract schemas. I designed token-based invite and organizer controls, built resilient telemetry with offline queueing, and shipped map/search-based waypoint planning. I deployed web and backend from one monorepo via Render blueprint and resolved production issues around runtime dependencies, deep-link rewrites, and env/CORS alignment. The beta is live and validated end to end.
+
 ## 1. Project Summary
 
 RideSync is a mobile-first Progressive Web App for coordinating motorcycle group rides in real time.
