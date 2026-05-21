@@ -1,0 +1,27 @@
+{
+  "name": "ridesync",
+  "private": true,
+  "version": "0.1.0",
+  "description": "RideSync mobile-first PWA monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n WEB,SERVER -c cyan,green \"npm run dev -w @ridesync/web\" \"npm run dev -w @ridesync/server\"",
+    "dev:web": "npm run dev -w @ridesync/web",
+    "dev:server": "npm run dev -w @ridesync/server",
+    "build": "npm run typecheck && npm run build -w @ridesync/web",
+    "typecheck": "npm run typecheck -w @ridesync/shared && npm run typecheck -w @ridesync/server && npm run typecheck -w @ridesync/web",
+    "lint": "npm run lint -w @ridesync/shared && npm run lint -w @ridesync/server && npm run lint -w @ridesync/web",
+    "test": "npm run test -w @ridesync/shared && npm run test -w @ridesync/server && npm run test -w @ridesync/web",
+    "format": "prettier --write ."
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.6.2"
+  }
+}

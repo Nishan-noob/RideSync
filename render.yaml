@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: ridesync-server
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm run start -w @ridesync/server
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: STORE_DRIVER
+        value: mongo
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: ridesync
+      - key: SOCKET_ADAPTER
+        value: redis
+      - key: REDIS_URL
+        sync: false
+
+  - type: web
+    name: ridesync-web
+    env: static
+    plan: free
+    rootDir: .
+    buildCommand: npm install && npm run build -w @ridesync/web
+    staticPublishPath: apps/web/dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
+      - key: VITE_SOCKET_URL
+        sync: false
