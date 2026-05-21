@@ -26,7 +26,6 @@ services:
   - type: web
     name: ridesync-web
     env: static
-    plan: free
     rootDir: .
     buildCommand: npm install && npm run build -w @ridesync/web
     staticPublishPath: apps/web/dist
