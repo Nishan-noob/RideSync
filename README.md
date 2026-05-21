@@ -2,6 +2,11 @@
 
 RideSync is a mobile-first Progressive Web App for coordinating group motorcycle rides with real-time location sharing, waypoint collaboration, and low-latency Socket.io updates.
 
+## Interview Prep Guide
+
+- Full architecture, feature breakdown, deployment journey, and interview Q and A:
+   - [docs/details.md](docs/details.md)
+
 ## Stack
 
 - Frontend: React, TypeScript, Vite, Redux Toolkit, Socket.io client, MapLibre, PWA
