@@ -57,6 +57,12 @@ function fallbackWaypointPosition() {
   }
 }
 
+function buildNavigationUrl(position: Coordinate): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+    `${position.lat},${position.lng}`,
+  )}`
+}
+
 type PlaceCandidate = {
   id: string
   title: string
@@ -922,6 +928,22 @@ export function RidePage() {
                         {waypoint.note && <span>{waypoint.note}</span>}
                       </div>
                       <div className="waypoint-actions">
+                        <a
+                          className="btn btn-subtle icon-btn"
+                          href={buildNavigationUrl(waypoint.position)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <svg
+                            className="nav-icon"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                            focusable="false"
+                          >
+                            <path d="M21 3L3 10.53L10.05 12.95L12.47 20L21 3Z" />
+                          </svg>
+                          <span>Navigate</span>
+                        </a>
                         <button
                           type="button"
                           className="btn btn-subtle"

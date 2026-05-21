@@ -515,6 +515,18 @@ textarea {
   gap: 0.45rem;
 }
 
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.nav-icon {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
 .waypoint-editor {
   display: grid;
   gap: 0.45rem;
