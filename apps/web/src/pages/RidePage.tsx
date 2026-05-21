@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Coordinate, RideRole, RideSnapshotPayload } from '@ridesync/shared'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -9,6 +9,7 @@ import { useAdaptiveTelemetry } from '../hooks/useAdaptiveTelemetry'
 import { useRideSocket } from '../hooks/useRideSocket'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import {
+  clearRideError,
   clearRideState,
   replaceSnapshot,
   setRideContext,
@@ -63,6 +64,14 @@ type PlaceCandidate = {
   position: Coordinate
 }
 
+type ToastLevel = 'info' | 'success' | 'error'
+
+type ToastMessage = {
+  id: number
+  level: ToastLevel
+  message: string
+}
+
 function humanizeRideError(message: string): string {
   if (message.includes('Failed to fetch')) {
     return 'Could not reach the server. Please check your connection and try again.'
@@ -99,6 +108,14 @@ export function RidePage() {
   const [isRotatingInvite, setIsRotatingInvite] = useState(false)
   const [isClosingRide, setIsClosingRide] = useState(false)
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false)
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false,
+  )
+  const [toasts, setToasts] = useState<ToastMessage[]>([])
+  const [editingWaypointId, setEditingWaypointId] = useState<string | null>(null)
+  const [editWaypointTitle, setEditWaypointTitle] = useState('')
+  const [editWaypointNote, setEditWaypointNote] = useState('')
+  const previousConnectionRef = useRef(rideState.connectionStatus)
 
   const role: RideRole = searchParams.get('role') === 'organizer' ? 'organizer' : 'rider'
   const displayName = session.displayName || session.userId
@@ -118,6 +135,45 @@ export function RidePage() {
 
     return organizerFromQuery || loadRideOrganizerToken(rideId)
   }, [organizerFromQuery, rideId])
+
+  const pushToast = (level: ToastLevel, message: string) => {
+    const toastId = Date.now() + Math.floor(Math.random() * 1_000)
+    setToasts((current) => [...current, { id: toastId, level, message }].slice(-5))
+
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== toastId))
+    }, 4_200)
+  }
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false)
+      pushToast('success', 'Back online. Syncing with the ride...')
+    }
+
+    const handleOffline = () => {
+      setIsOffline(true)
+      pushToast('info', 'You are offline. Telemetry will sync after reconnect.')
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  useEffect(() => {
+    const previous = previousConnectionRef.current
+
+    if (previous !== 'connected' && rideState.connectionStatus === 'connected') {
+      pushToast('success', 'Connected to ride.')
+    }
+
+    previousConnectionRef.current = rideState.connectionStatus
+  }, [rideState.connectionStatus])
 
   useEffect(() => {
     if (!rideId) {
@@ -254,10 +310,10 @@ export function RidePage() {
           replace: true,
         },
       )
-      dispatch(setRideError('Invite link rotated. Old invite links no longer work.'))
+      pushToast('success', 'Invite link rotated. Old invite links no longer work.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not rotate invite link.'
-      dispatch(setRideError(message))
+      dispatch(setRideError(humanizeRideError(message)))
     } finally {
       setIsRotatingInvite(false)
     }
@@ -301,7 +357,7 @@ export function RidePage() {
 
       const payload = (await response.json()) as { snapshot: RideSnapshotPayload }
       dispatch(replaceSnapshot(payload.snapshot))
-      dispatch(setRideError('Ride is now closed.'))
+      pushToast('info', 'Ride is now closed.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not close ride.'
       dispatch(setRideError(humanizeRideError(message)))
@@ -440,9 +496,9 @@ export function RidePage() {
     })
 
     if (selectedWaypointPosition) {
-      dispatch(setRideError('Waypoint added from selected map location.'))
+      pushToast('success', 'Waypoint added from selected map/search location.')
     } else if (!selfLocation) {
-      dispatch(setRideError('No GPS lock yet. Waypoint was placed using demo position.'))
+      pushToast('info', 'No GPS lock yet. Waypoint was placed using demo position.')
     }
 
     setWaypointTitle('')
@@ -468,6 +524,67 @@ export function RidePage() {
       waypointId,
       userId: session.userId,
     })
+  }
+
+  const startWaypointEdit = (waypointId: string) => {
+    const waypoint = rideState.waypoints.find((item) => item.id === waypointId)
+    if (!waypoint) {
+      return
+    }
+
+    setEditingWaypointId(waypointId)
+    setEditWaypointTitle(waypoint.title)
+    setEditWaypointNote(waypoint.note ?? '')
+  }
+
+  const cancelWaypointEdit = () => {
+    setEditingWaypointId(null)
+    setEditWaypointTitle('')
+    setEditWaypointNote('')
+  }
+
+  const saveWaypointEdit = () => {
+    if (!editingWaypointId) {
+      return
+    }
+
+    const socket = socketRef.current
+    if (!socket || !socket.connected) {
+      dispatch(setRideError('Socket is disconnected. Reconnect to edit waypoint.'))
+      return
+    }
+
+    const waypoint = rideState.waypoints.find((item) => item.id === editingWaypointId)
+    if (!waypoint) {
+      cancelWaypointEdit()
+      return
+    }
+
+    const title = editWaypointTitle.trim()
+    if (!title) {
+      dispatch(setRideError('Waypoint title is required.'))
+      return
+    }
+
+    socket.emit('waypoint:add', {
+      rideId,
+      userId: session.userId,
+      title,
+      note: editWaypointNote.trim() || undefined,
+      position: {
+        ...waypoint.position,
+        recordedAt: Date.now(),
+      },
+    })
+
+    socket.emit('waypoint:remove', {
+      rideId,
+      waypointId: editingWaypointId,
+      userId: session.userId,
+    })
+
+    pushToast('success', 'Waypoint details updated.')
+    cancelWaypointEdit()
   }
 
   const copyRideCode = async () => {
@@ -496,10 +613,12 @@ export function RidePage() {
       if (!copied) {
         throw new Error('Clipboard command failed')
       }
+
+      pushToast('success', 'Invite link copied.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not copy code.'
       window.prompt('Copy this invite link manually:', inviteLink)
-      dispatch(setRideError(`Could not copy invite link automatically: ${message}`))
+      dispatch(setRideError(humanizeRideError(`Could not copy invite link automatically: ${message}`)))
     }
   }
 
@@ -550,7 +669,11 @@ export function RidePage() {
 
       <section className="panel status-panel">
         <span className={`status-pill is-${rideState.connectionStatus}`}>
-          {rideState.connectionStatus === 'connected' ? 'Connected' : 'Reconnecting'}
+          {rideState.connectionStatus === 'connected'
+            ? 'Connected'
+            : rideState.connectionStatus === 'error'
+              ? 'Connection issue'
+              : 'Reconnecting'}
         </span>
         <span className={`status-pill ${isRideClosed ? 'is-error' : 'is-connected'}`}>
           Ride: {rideState.status === 'closed' ? 'Closed' : 'Active'}
@@ -566,6 +689,12 @@ export function RidePage() {
         </button>
       </section>
 
+      {isOffline && (
+        <p className="notice-banner notice-banner-info">
+          You are offline. Updates will resume automatically after reconnect.
+        </p>
+      )}
+
       {isDiagnosticsOpen && (
         <section className="panel diagnostics-panel">
           <span className="status-pill">Invite: {inviteToken ? 'provided' : 'missing'}</span>
@@ -579,9 +708,31 @@ export function RidePage() {
         </section>
       )}
 
-      {rideState.lastError && <p className="banner-error">{rideState.lastError}</p>}
       {isRideClosed && (
-        <p className="banner-error">Ride closed by organizer at {formatClosedAt(rideState.closedAt)}.</p>
+        <p className="notice-banner notice-banner-warning">
+          Ride closed by organizer at {formatClosedAt(rideState.closedAt)}.
+        </p>
+      )}
+
+      {toasts.length > 0 && (
+        <section className="toast-stack" aria-live="polite" aria-atomic="false">
+          {toasts.map((toast) => (
+            <div key={toast.id} className={`toast-item toast-${toast.level}`}>
+              {toast.message}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {rideState.lastError && (
+        <section className="toast-stack toast-stack-secondary" aria-live="polite" aria-atomic="false">
+          <div className="toast-item toast-error toast-with-action">
+            <span>{humanizeRideError(rideState.lastError)}</span>
+            <button type="button" className="btn btn-subtle" onClick={() => dispatch(clearRideError())}>
+              Dismiss
+            </button>
+          </div>
+        </section>
       )}
 
       <section className="panel map-panel">
@@ -726,22 +877,74 @@ export function RidePage() {
       <section className="panel list-panel">
         <h2>Waypoints ({rideState.waypoints.length})</h2>
         <ul>
-          {rideState.waypoints.map((waypoint) => (
-            <li key={waypoint.id}>
-              <div>
-                <strong>{waypoint.title}</strong>
-                {waypoint.note && <span>{waypoint.note}</span>}
-              </div>
-              <button
-                type="button"
-                className="btn btn-subtle"
-                onClick={() => handleRemoveWaypoint(waypoint.id)}
-                disabled={isRideClosed}
-              >
-                Remove
-              </button>
-            </li>
-          ))}
+          {rideState.waypoints.map((waypoint) => {
+            const isEditing = editingWaypointId === waypoint.id
+
+            return (
+              <li key={waypoint.id}>
+                <div className="waypoint-row">
+                  {isEditing ? (
+                    <div className="waypoint-editor">
+                      <label htmlFor={`edit-title-${waypoint.id}`}>Title</label>
+                      <input
+                        id={`edit-title-${waypoint.id}`}
+                        value={editWaypointTitle}
+                        onChange={(event) => setEditWaypointTitle(event.target.value)}
+                        maxLength={80}
+                        disabled={isRideClosed}
+                      />
+                      <label htmlFor={`edit-note-${waypoint.id}`}>Note</label>
+                      <textarea
+                        id={`edit-note-${waypoint.id}`}
+                        value={editWaypointNote}
+                        onChange={(event) => setEditWaypointNote(event.target.value)}
+                        maxLength={160}
+                        disabled={isRideClosed}
+                      />
+                      <div className="waypoint-actions">
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={saveWaypointEdit}
+                          disabled={isRideClosed}
+                        >
+                          Save
+                        </button>
+                        <button type="button" className="btn btn-subtle" onClick={cancelWaypointEdit}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <strong>{waypoint.title}</strong>
+                        {waypoint.note && <span>{waypoint.note}</span>}
+                      </div>
+                      <div className="waypoint-actions">
+                        <button
+                          type="button"
+                          className="btn btn-subtle"
+                          onClick={() => startWaypointEdit(waypoint.id)}
+                          disabled={isRideClosed}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-subtle"
+                          onClick={() => handleRemoveWaypoint(waypoint.id)}
+                          disabled={isRideClosed}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </li>
+            )
+          })}
           {rideState.waypoints.length === 0 && <li>No waypoints added yet.</li>}
         </ul>
       </section>

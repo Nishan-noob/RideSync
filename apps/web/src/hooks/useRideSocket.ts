@@ -68,12 +68,13 @@ export function useRideSocket({
     })
 
     socket.on('disconnect', () => {
-      dispatch(setConnectionStatus('idle'))
+      dispatch(setConnectionStatus('connecting'))
+      dispatch(setRideError('Connection lost. Reconnecting...'))
     })
 
-    socket.on('connect_error', (error) => {
+    socket.on('connect_error', () => {
       dispatch(setConnectionStatus('error'))
-      dispatch(setRideError(`Socket connect error: ${error.message}`))
+      dispatch(setRideError('Unable to connect right now. Retrying automatically.'))
     })
 
     socket.on('ride:error', (payload) => {

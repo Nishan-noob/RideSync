@@ -13,19 +13,19 @@
 - [x] Hide diagnostics by default
 - [x] Add diagnostics expand/collapse panel
 - [x] Simplify top-level status chips for customer readability
-- [ ] Convert transient errors to non-blocking toast stack
+- [x] Convert transient errors to non-blocking toast stack
 
 ## Waypoint Experience
 
 - [x] Add waypoint at current location
 - [x] Add waypoint by tapping map
 - [x] Add waypoint from place search
-- [ ] Edit waypoint title and note after creation
+- [x] Edit waypoint title and note after creation
 - [ ] Sort waypoints by planned sequence
 
 ## Reliability
 
-- [ ] Add reconnect banner with retry guidance
+- [x] Add reconnect banner with retry guidance
 - [ ] Add stale-location indicator per rider (age threshold)
 - [ ] Add explicit offline mode banner and queue flush summary
 

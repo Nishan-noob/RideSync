@@ -49,6 +49,9 @@ const rideSlice = createSlice({
     setRideError(state, action: PayloadAction<string>) {
       state.lastError = action.payload
     },
+    clearRideError(state) {
+      state.lastError = null
+    },
     replaceSnapshot(state, action: PayloadAction<RideSnapshotPayload>) {
       state.rideId = action.payload.rideId
       state.status = action.payload.status
@@ -97,6 +100,7 @@ export const {
   setRideContext,
   setConnectionStatus,
   setRideError,
+  clearRideError,
   replaceSnapshot,
   memberJoined,
   memberLeft,

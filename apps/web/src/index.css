@@ -197,6 +197,73 @@ textarea {
   padding: 0.75rem;
 }
 
+.notice-banner {
+  margin: 0;
+  border-radius: var(--radius-md);
+  padding: 0.72rem;
+  font-size: 0.9rem;
+}
+
+.notice-banner-info {
+  border: 1px solid rgba(111, 188, 241, 0.45);
+  background: rgba(22, 65, 102, 0.35);
+  color: #d8efff;
+}
+
+.notice-banner-warning {
+  border: 1px solid rgba(255, 142, 142, 0.5);
+  background: rgba(105, 22, 22, 0.45);
+  color: #ffd7d7;
+}
+
+.toast-stack {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 50;
+  display: grid;
+  gap: 0.5rem;
+  width: min(92vw, 360px);
+}
+
+.toast-stack-secondary {
+  bottom: 6.1rem;
+}
+
+.toast-item {
+  border-radius: 12px;
+  border: 1px solid rgba(157, 185, 198, 0.35);
+  background: rgba(11, 19, 25, 0.92);
+  color: var(--text-primary);
+  padding: 0.65rem 0.72rem;
+  font-size: 0.85rem;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.35);
+}
+
+.toast-error {
+  border-color: rgba(255, 102, 102, 0.65);
+}
+
+.toast-success {
+  border-color: rgba(62, 210, 182, 0.6);
+}
+
+.toast-info {
+  border-color: rgba(111, 188, 241, 0.6);
+}
+
+.toast-with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.toast-with-action .btn {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.78rem;
+}
+
 .ride-header {
   display: flex;
   flex-direction: column;
@@ -434,6 +501,27 @@ textarea {
   background: rgba(8, 14, 20, 0.45);
   border-radius: 12px;
   padding: 0.58rem 0.68rem;
+}
+
+.waypoint-row {
+  width: 100%;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.waypoint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.waypoint-editor {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.waypoint-editor textarea {
+  min-height: 72px;
 }
 
 .list-panel strong {
